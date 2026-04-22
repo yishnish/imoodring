@@ -1,0 +1,20 @@
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# CocoaPods
+Pods/
+*.xcworkspace
+Podfile.lock
+
+# Generated project (regenerate with: xcodegen generate)
+*.xcodeproj
+
+# Build
+build/
