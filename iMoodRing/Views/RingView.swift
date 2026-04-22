@@ -64,7 +64,7 @@ final class RingCanvasView: UIView {
 
     private func startLink() {
         guard displayLink == nil else { return }
-        displayLink = CADisplayLink(target: self, selector: #selector(frame))
+        displayLink = CADisplayLink(target: self, selector: #selector(renderTick))
         displayLink?.add(to: .main, forMode: .common)
     }
 
@@ -73,7 +73,7 @@ final class RingCanvasView: UIView {
         displayLink = nil
     }
 
-    @objc private func frame() {
+    @objc private func renderTick() {
         animator?.tick()
         setNeedsDisplay()
     }
