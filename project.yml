@@ -17,7 +17,7 @@ targets:
     deploymentTarget: "17.0"
     dependencies:
       - package: LlamaSwift
-        product: llama
+        product: LlamaSwift
     sources:
       - path: iMoodRing
     settings:
