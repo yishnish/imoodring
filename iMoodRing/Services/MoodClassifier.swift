@@ -18,6 +18,10 @@ actor GemmaMoodClassifier: MoodClassifying {
 
     private static let moods = Mood.allCases.map(\.rawValue).joined(separator: ", ")
 
+    func requestSpeechAuth() async -> Bool {
+        await transcriber.requestAuthorization()
+    }
+
     func load(modelPath: String) throws {
         // LlmInference is deprecated in favour of LiteRT-LM; migrate when Swift SDK ships.
         let options = LlmInference.Options(modelPath: modelPath)

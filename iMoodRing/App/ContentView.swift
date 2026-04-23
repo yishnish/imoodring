@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreHaptics
+import AVFoundation
 
 @Observable
 final class AppViewModel {
@@ -53,6 +54,13 @@ final class AppViewModel {
                         self.appState = .loading(progress: progress, label: "Downloading \(variant.name)", detail: detail)
                     case .ready(let path):
                         do {
+                            // Request permissions before starting audio — on device these are required.
+                            let micOK  = await AVAudioApplication.requestRecordPermission()
+                            let asrOK  = await self.classifier.requestSpeechAuth()
+                            guard micOK, asrOK else {
+                                self.appState = .error("Microphone and speech recognition permissions are required.")
+                                return
+                            }
                             try await self.classifier.load(modelPath: path)
                             self.appState = .listening
                             self.startAudio()
