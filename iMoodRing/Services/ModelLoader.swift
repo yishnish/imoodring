@@ -8,21 +8,24 @@ struct ModelVariant {
 }
 
 extension ModelVariant {
-    // Gemma 4 E2B — default, ~2.6 GB, suitable for most iPhones
-    // Model card: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
-    // Use .litertlm (mobile/iOS format); the -web.task variant is WASM-only and fails on iOS.
+    // Gemma 3 1B — ~584 MB, runs on CPU within iOS memory limits.
+    // Interim model until LiteRT-LM's Metal GPU backend ships for iOS, at which
+    // point we can switch back to Gemma 4 E2B (2.6 GB needs GPU to avoid OOM).
+    // Model card: https://huggingface.co/litert-community/Gemma3-1B-IT
+    static let gemma3_1b = ModelVariant(
+        name: "Gemma 3 1B",
+        url: URL(string: "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm")!,
+        filename: "Gemma3-1B-IT_q4.litertlm",
+        approximateSizeGB: 0.6
+    )
+
+    // Gemma 4 E2B — ~2.6 GB, requires Metal GPU acceleration on iOS.
+    // Re-enable when LiteRT-LM bundles libLiteRtMetalAccelerator for iOS.
     static let e2b = ModelVariant(
         name: "Gemma 4 E2B",
         url: URL(string: "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")!,
         filename: "gemma-4-E2B-it.litertlm",
         approximateSizeGB: 2.6
-    )
-
-    static let e4b = ModelVariant(
-        name: "Gemma 4 E4B",
-        url: URL(string: "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm")!,
-        filename: "gemma-4-E4B-it.litertlm",
-        approximateSizeGB: 4.5
     )
 }
 
