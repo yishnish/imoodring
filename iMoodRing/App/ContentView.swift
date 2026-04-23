@@ -37,7 +37,7 @@ final class AppViewModel {
     // MARK: - Model loading
 
     private func loadModel() async {
-        let variant = ModelVariant.e2b
+        let variant = ModelVariant.gemma3_1b
         appState = .loading(progress: 0, label: "Preparing model…", detail: "")
 
         // Observe ModelLoader.state and relay progress
@@ -210,7 +210,7 @@ struct ContentView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(.white.opacity(0.4))
 
-            Text("Downloads ~2.3 GB on first launch")
+            Text("Downloads ~700 MB on first launch")
                 .font(.system(size: 10))
                 .tracking(1.3)
                 .foregroundStyle(.white.opacity(0.2))

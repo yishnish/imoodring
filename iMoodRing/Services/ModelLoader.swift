@@ -8,20 +8,22 @@ struct ModelVariant {
 }
 
 extension ModelVariant {
-    // Gemma 3 1B GGUF Q4_K_M — ~900 MB, CPU-only fallback for constrained devices.
+    // Gemma 3 1B GGUF Q4_K_M — ~670 MB, official ggml-org build (guaranteed llama.cpp compat).
+    // Used for baseline testing. Switch to e2b once CPU inference is confirmed working.
     static let gemma3_1b = ModelVariant(
         name: "Gemma 3 1B",
-        url: URL(string: "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/main/google_gemma-3-1b-it-Q4_K_M.gguf")!,
-        filename: "google_gemma-3-1b-it-Q4_K_M.gguf",
-        approximateSizeGB: 0.9
+        url: URL(string: "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf")!,
+        filename: "ggml-gemma-3-1b-it-Q4_K_M.gguf",
+        approximateSizeGB: 0.7
     )
 
-    // Gemma 4 E2B GGUF UD-IQ2_M — ~2.3 GB, Metal GPU via llama.cpp.
+    // Gemma 4 E2B GGUF Q4_K_M — ~2.6 GB, Metal GPU via llama.cpp.
+    // Re-enable after gemma3_1b baseline is confirmed working on device.
     static let e2b = ModelVariant(
         name: "Gemma 4 E2B",
-        url: URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-UD-IQ2_M.gguf")!,
-        filename: "gemma-4-E2B-it-UD-IQ2_M.gguf",
-        approximateSizeGB: 2.3
+        url: URL(string: "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf")!,
+        filename: "ggml-gemma-4-E2B-it-Q4_K_M.gguf",
+        approximateSizeGB: 2.6
     )
 }
 
