@@ -10,6 +10,10 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    dependencies:
+      - framework: Vendor/libLiteRtMetalAccelerator.dylib
+        embed: true
+        codeSign: true
     sources:
       - path: iMoodRing
     settings:
