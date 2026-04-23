@@ -40,20 +40,40 @@ actor SpeechTranscriber {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = false
+        // Simulator's on-device ASR service doesn't respond and causes RPC timeout deadlock.
+        #if !targetEnvironment(simulator)
         request.requiresOnDeviceRecognition = true
+        #endif
         request.addsPunctuation = false
         request.append(pcmBuffer)
         request.endAudio()
 
         return try await withCheckedThrowingContinuation { continuation in
             var didResume = false
-            recognizer.recognitionTask(with: request) { result, error in
+            var recognitionTask: SFSpeechRecognitionTask?
+
+            // Guard against the recognition service hanging (e.g. no speech in chunk).
+            let timeout = Task {
+                try? await Task.sleep(for: .seconds(10))
                 guard !didResume else { return }
+                didResume = true
+                recognitionTask?.cancel()
+                continuation.resume(returning: nil)
+            }
+
+            recognitionTask = recognizer.recognitionTask(with: request) { result, error in
+                timeout.cancel()
+                guard !didResume else { return }
+                didResume = true
                 if let error {
-                    didResume = true
-                    continuation.resume(throwing: error)
+                    let code = (error as NSError).code
+                    // Cancellation codes — not a real error, just return nil.
+                    if code == 3 || code == 216 || code == NSUserCancelledError {
+                        continuation.resume(returning: nil)
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
                 } else if let result, result.isFinal {
-                    didResume = true
                     let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespaces)
                     let wordCount = text.split(separator: " ").count
                     continuation.resume(returning: wordCount >= minimumWords ? text : nil)
