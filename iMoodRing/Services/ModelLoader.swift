@@ -10,8 +10,8 @@ struct ModelVariant {
 extension ModelVariant {
     // Gemma 4 E2B — default, ~2 GB, suitable for most iPhones
     // Model card: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
-    // NOTE: MediaPipe LLM Inference uses the mobile .task file; verify the URL is
-    // the mobile-optimized variant if Google publishes a separate one on Kaggle.
+    // NOTE: verify this is the right file for MediaPipe LLM Inference iOS;
+    // a Kaggle-hosted mobile variant may perform better if Google publishes one.
     static let e2b = ModelVariant(
         name: "Gemma 4 E2B",
         url: URL(string: "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task")!,
@@ -19,7 +19,6 @@ extension ModelVariant {
         approximateSizeGB: 2.0
     )
 
-    // Gemma 4 E4B — enhanced, ~3.6 GB, better quality
     static let e4b = ModelVariant(
         name: "Gemma 4 E4B",
         url: URL(string: "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.task")!,
@@ -39,11 +38,9 @@ final class ModelLoader {
 
     var state: State = .idle
 
-    private var downloadTask: URLSessionDownloadTask?
-
     private static let storageURL: URL = {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Models", isDirectory: true)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Models", isDirectory: true)
     }()
 
     func localPath(for variant: ModelVariant) -> String {
@@ -69,43 +66,86 @@ final class ModelLoader {
 
     private func download(_ variant: ModelVariant) async {
         try? FileManager.default.createDirectory(at: Self.storageURL, withIntermediateDirectories: true)
+        let dest = Self.storageURL.appendingPathComponent(variant.filename)
 
-        let delegate = DownloadDelegate { [weak self] progress, detail in
-            Task { @MainActor in self?.state = .downloading(progress: progress, detail: detail) }
+        await MainActor.run { state = .downloading(progress: 0, detail: "Connecting…") }
+        print("[ModelLoader] Starting download: \(variant.url)")
+
+        let result: Result<URL, Error> = await withCheckedContinuation { continuation in
+            let delegate = DownloadDelegate(
+                dest: dest,
+                onProgress: { [weak self] progress, detail in
+                    Task { @MainActor in self?.state = .downloading(progress: progress, detail: detail) }
+                },
+                onComplete: { result in
+                    continuation.resume(returning: result)
+                }
+            )
+            // URLSession holds delegate weakly; DownloadDelegate retains itself until complete.
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            delegate.retainedSession = session
+            session.downloadTask(with: variant.url).resume()
         }
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
 
-        state = .downloading(progress: 0, detail: "Starting…")
-
-        do {
-            let (tempURL, response) = try await session.download(from: variant.url)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                state = .failed("Download failed — unexpected server response")
-                return
-            }
-            let dest = Self.storageURL.appendingPathComponent(variant.filename)
-            try? FileManager.default.removeItem(at: dest)
-            try FileManager.default.moveItem(at: tempURL, to: dest)
-            state = .ready(modelPath: dest.path)
-        } catch {
+        switch result {
+        case .success(let url):
+            print("[ModelLoader] Download complete: \(url.path)")
+            state = .ready(modelPath: url.path)
+        case .failure(let error):
+            print("[ModelLoader] Download failed: \(error)")
             state = .failed("Download error: \(error.localizedDescription)")
         }
     }
 }
 
-private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Double, String) -> Void
-    init(_ onProgress: @escaping (Double, String) -> Void) { self.onProgress = onProgress }
+// MARK: - Delegate
 
-    func urlSession(_: URLSession, downloadTask: URLSessionDownloadTask,
-                    didWriteData _: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite total: Int64) {
-        let progress = total > 0 ? Double(totalBytesWritten) / Double(total) : 0
-        let mb = totalBytesWritten / 1_048_576
-        let totalMB = total / 1_048_576
-        onProgress(progress, "\(mb) / \(totalMB) MB")
+private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    private let dest: URL
+    private let onProgress: (Double, String) -> Void
+    private let onComplete: (Result<URL, Error>) -> Void
+    private var completed = false
+
+    // Kept alive until the download finishes (URLSession holds delegate weakly)
+    var retainedSession: URLSession?
+
+    init(dest: URL, onProgress: @escaping (Double, String) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
+        self.dest = dest
+        self.onProgress = onProgress
+        self.onComplete = onComplete
     }
 
-    func urlSession(_: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // File is moved by the async continuation in ModelLoader.download()
+    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask,
+                    didWriteData _: Int64, totalBytesWritten written: Int64, totalBytesExpectedToWrite total: Int64) {
+        let mb = Double(written) / 1_048_576
+        if total > 0 {
+            let totalMB = Double(total) / 1_048_576
+            let pct = Double(written) / Double(total)
+            onProgress(pct, String(format: "%.0f / %.0f MB", mb, totalMB))
+        } else {
+            // Server didn't send Content-Length — show bytes only, pulse the bar at 50%
+            onProgress(0.5, String(format: "%.0f MB downloaded…", mb))
+        }
+    }
+
+    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard !completed else { return }
+        completed = true
+        retainedSession = nil
+        do {
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.moveItem(at: location, to: dest)
+            onComplete(.success(dest))
+        } catch {
+            onComplete(.failure(error))
+        }
+    }
+
+    func urlSession(_: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard !completed, let error else { return }
+        completed = true
+        retainedSession = nil
+        print("[ModelLoader] URLSession task error: \(error)")
+        onComplete(.failure(error))
     }
 }
