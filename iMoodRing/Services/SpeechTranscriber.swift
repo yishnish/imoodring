@@ -98,7 +98,7 @@ actor SpeechTranscriber {
                 didResume = true
                 if let error {
                     let code = (error as NSError).code
-                    if code == 3 || code == 216 || code == NSUserCancelledError {
+                    if code == 3 || code == 216 || code == 1110 || code == NSUserCancelledError {
                         continuation.resume(returning: nil)
                     } else {
                         continuation.resume(throwing: error)
