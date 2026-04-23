@@ -107,6 +107,9 @@ actor SpeechTranscriber {
                     let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespaces)
                     let wordCount = text.split(separator: " ").count
                     continuation.resume(returning: wordCount >= minimumWords ? text : nil)
+                } else {
+                    // nil result + nil error: task ended without producing output
+                    continuation.resume(returning: nil)
                 }
             }
         }
