@@ -15,6 +15,10 @@ protocol MoodClassifying: Actor {
 actor GemmaMoodClassifier: MoodClassifying {
     private var inference: LlmInference?
     private let transcriber = SpeechTranscriber()
+    // Serial GCD queue for inference: LiteRT's internal thread pool conflicts with
+    // Swift's cooperative thread pool, causing a libpthread abort on first inference.
+    // Running on a plain GCD queue lets LiteRT initialize its threads normally.
+    private let inferenceQueue = DispatchQueue(label: "com.nharsh.iMoodRing.inference", qos: .userInitiated)
 
     private static let moods = Mood.allCases.map(\.rawValue).joined(separator: ", ")
 
@@ -36,9 +40,17 @@ actor GemmaMoodClassifier: MoodClassifying {
 
         let prompt = buildPrompt(transcript: transcript)
 
-        // LlmInference.generateResponse is synchronous — run off the actor executor
-        // to avoid blocking the main queue, while remaining serial within this actor.
-        let raw = try inference.generateResponse(inputText: prompt)
+        let capturedInference = inference
+        let raw: String = try await withCheckedThrowingContinuation { continuation in
+            inferenceQueue.async {
+                do {
+                    let result = try capturedInference.generateResponse(inputText: prompt)
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
 
         return parse(raw: raw, fallbackTranscript: transcript)
     }
