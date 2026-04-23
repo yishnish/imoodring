@@ -13,6 +13,7 @@ targets:
     dependencies:
       - framework: Vendor/libLiteRtMetalAccelerator.dylib
         embed: true
+        link: false
         codeSign: true
     sources:
       - path: iMoodRing
