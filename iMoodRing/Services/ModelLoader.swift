@@ -14,8 +14,8 @@ extension ModelVariant {
     // Model card: https://huggingface.co/litert-community/Gemma3-1B-IT
     static let gemma3_1b = ModelVariant(
         name: "Gemma 3 1B",
-        url: URL(string: "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm")!,
-        filename: "Gemma3-1B-IT_q4.litertlm",
+        url: URL(string: "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm")!,
+        filename: "gemma3-1b-it-int4.litertlm",
         approximateSizeGB: 0.6
     )
 
