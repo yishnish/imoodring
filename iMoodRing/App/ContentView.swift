@@ -1,7 +1,6 @@
 import SwiftUI
 import CoreHaptics
 import AVFoundation
-import Metal
 
 @Observable
 final class AppViewModel {
@@ -28,9 +27,6 @@ final class AppViewModel {
     private let classifier = GemmaMoodClassifier()
     private let audio      = AudioCapture()
     private var hapticEngine: CHHapticEngine?
-    // Retained for app lifetime: libLiteRtMetalAccelerator is compiled without ARC and
-    // releases MTLDevice prematurely if no ARC-managed owner holds it first.
-    private let metalDevice = MTLCreateSystemDefaultDevice()
 
     func begin() {
         guard case .idle = appState else { return }
@@ -214,7 +210,7 @@ struct ContentView: View {
                 .textCase(.uppercase)
                 .foregroundStyle(.white.opacity(0.4))
 
-            Text("Downloads ~2.6 GB on first launch")
+            Text("Downloads ~2.3 GB on first launch")
                 .font(.system(size: 10))
                 .tracking(1.3)
                 .foregroundStyle(.white.opacity(0.2))

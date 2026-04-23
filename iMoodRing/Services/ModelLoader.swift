@@ -8,24 +8,20 @@ struct ModelVariant {
 }
 
 extension ModelVariant {
-    // Gemma 3 1B — ~584 MB, runs on CPU within iOS memory limits.
-    // Interim model until LiteRT-LM's Metal GPU backend ships for iOS, at which
-    // point we can switch back to Gemma 4 E2B (2.6 GB needs GPU to avoid OOM).
-    // Model card: https://huggingface.co/litert-community/Gemma3-1B-IT
+    // Gemma 3 1B GGUF Q4_K_M — ~900 MB, CPU-only fallback for constrained devices.
     static let gemma3_1b = ModelVariant(
         name: "Gemma 3 1B",
-        url: URL(string: "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.litertlm")!,
-        filename: "gemma3-1b-it-int4.litertlm",
-        approximateSizeGB: 0.6
+        url: URL(string: "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/main/google_gemma-3-1b-it-Q4_K_M.gguf")!,
+        filename: "google_gemma-3-1b-it-Q4_K_M.gguf",
+        approximateSizeGB: 0.9
     )
 
-    // Gemma 4 E2B — ~2.6 GB, requires Metal GPU acceleration on iOS.
-    // Re-enable when LiteRT-LM bundles libLiteRtMetalAccelerator for iOS.
+    // Gemma 4 E2B GGUF UD-IQ2_M — ~2.3 GB, Metal GPU via llama.cpp.
     static let e2b = ModelVariant(
         name: "Gemma 4 E2B",
-        url: URL(string: "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm")!,
-        filename: "gemma-4-E2B-it.litertlm",
-        approximateSizeGB: 2.6
+        url: URL(string: "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-UD-IQ2_M.gguf")!,
+        filename: "gemma-4-E2B-it-UD-IQ2_M.gguf",
+        approximateSizeGB: 2.3
     )
 }
 
@@ -83,7 +79,6 @@ final class ModelLoader {
                     continuation.resume(returning: result)
                 }
             )
-            // URLSession holds delegate weakly; DownloadDelegate retains itself until complete.
             let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
             delegate.retainedSession = session
             session.downloadTask(with: variant.url).resume()
@@ -108,7 +103,6 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
     private let onComplete: (Result<URL, Error>) -> Void
     private var completed = false
 
-    // Kept alive until the download finishes (URLSession holds delegate weakly)
     var retainedSession: URLSession?
 
     init(dest: URL, onProgress: @escaping (Double, String) -> Void, onComplete: @escaping (Result<URL, Error>) -> Void) {
@@ -125,7 +119,6 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
             let pct = Double(written) / Double(total)
             onProgress(pct, String(format: "%.0f / %.0f MB", mb, totalMB))
         } else {
-            // Server didn't send Content-Length — show bytes only, pulse the bar at 50%
             onProgress(0.5, String(format: "%.0f MB downloaded…", mb))
         }
     }

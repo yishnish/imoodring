@@ -1,5 +1,4 @@
 import Foundation
-import MediaPipeTasksGenAI
 
 struct MoodResult {
     let transcript: String
@@ -7,17 +6,13 @@ struct MoodResult {
     let intensity: Double
 }
 
-// Protocol isolates the MediaPipe dependency — swap for LiteRT-LM audio when Swift SDK ships.
 protocol MoodClassifying: Actor {
     func classify(audio: [Float]) async throws -> MoodResult?
 }
 
 actor GemmaMoodClassifier: MoodClassifying {
-    private var inference: LlmInference?
+    private var runner: LlamaRunner?
     private let transcriber = SpeechTranscriber()
-    // Serial GCD queue for inference: LiteRT's internal thread pool conflicts with
-    // Swift's cooperative thread pool, causing a libpthread abort on first inference.
-    // Running on a plain GCD queue lets LiteRT initialize its threads normally.
     private let inferenceQueue = DispatchQueue(label: "com.nharsh.iMoodRing.inference", qos: .userInitiated)
 
     private static let moods = Mood.allCases.map(\.rawValue).joined(separator: ", ")
@@ -27,24 +22,21 @@ actor GemmaMoodClassifier: MoodClassifying {
     }
 
     func load(modelPath: String) throws {
-        // LlmInference is deprecated in favour of LiteRT-LM; migrate when Swift SDK ships.
-        let options = LlmInference.Options(modelPath: modelPath)
-        options.maxTokens = 150
-        inference = try LlmInference(options: options)
+        runner = try LlamaRunner(modelPath: modelPath)
     }
 
     func classify(audio: [Float]) async throws -> MoodResult? {
-        guard let inference else { throw ClassifierError.notLoaded }
+        guard let runner else { throw ClassifierError.notLoaded }
 
         guard let transcript = try await transcriber.transcribe(audio) else { return nil }
 
         let prompt = buildPrompt(transcript: transcript)
+        let capturedRunner = runner
 
-        let capturedInference = inference
         let raw: String = try await withCheckedThrowingContinuation { continuation in
             inferenceQueue.async {
                 do {
-                    let result = try capturedInference.generateResponse(inputText: prompt)
+                    let result = try capturedRunner.generate(prompt: prompt)
                     continuation.resume(returning: result)
                 } catch {
                     continuation.resume(throwing: error)
@@ -57,14 +49,19 @@ actor GemmaMoodClassifier: MoodClassifying {
 
     // MARK: - Private
 
+    // Gemma instruct format: BOS is added by the tokenizer (add_special=true),
+    // special tokens like <start_of_turn> are parsed as single tokens (parse_special=true).
     private func buildPrompt(transcript: String) -> String {
         """
+        <start_of_turn>user
         Classify the emotional tone of this spoken text.
         Reply with ONLY valid JSON, no other text:
         {"transcript": "...", "mood": "<mood>", "intensity": <0.0-1.0>}
         mood must be exactly one of: \(Self.moods)
 
-        Text: "\(transcript)"
+        Text: "\(transcript)"<end_of_turn>
+        <start_of_turn>model
+
         """
     }
 

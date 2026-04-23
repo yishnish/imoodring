@@ -5,16 +5,19 @@ options:
     iOS: "17.0"
   xcodeVersion: "16.0"
 
+packages:
+  LlamaSwift:
+    url: https://github.com/mattt/llama.swift
+    branch: main
+
 targets:
   iMoodRing:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
     dependencies:
-      - framework: Vendor/libLiteRtMetalAccelerator.dylib
-        embed: true
-        link: false
-        codeSign: true
+      - package: LlamaSwift
+        product: llama
     sources:
       - path: iMoodRing
     settings:
