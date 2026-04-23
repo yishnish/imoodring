@@ -98,7 +98,7 @@ final class LlamaRunner {
         let capacity = text.utf8.count + 64
         var buf = [llama_token](repeating: 0, count: capacity)
         let n = text.withCString { ptr in
-            llama_tokenize(model, ptr, Int32(text.utf8.count), &buf, Int32(capacity), true, true)
+            llama_tokenize(vocab, ptr, Int32(text.utf8.count), &buf, Int32(capacity), true, true)
         }
         guard n > 0 else { throw LlamaError.tokenizationFailed }
         return Array(buf.prefix(Int(n)))
@@ -106,7 +106,7 @@ final class LlamaRunner {
 
     private func piece(for token: llama_token) -> String {
         var buf = [CChar](repeating: 0, count: 64)
-        let n = llama_token_to_piece(model, token, &buf, 64, 0, false)
+        let n = llama_token_to_piece(vocab, token, &buf, 64, 0, false)
         guard n > 0 else { return "" }
         return String(bytes: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, encoding: .utf8) ?? ""
     }
