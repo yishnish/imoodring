@@ -4,10 +4,9 @@ import llama
 // Synchronous, non-thread-safe wrapper around the llama.cpp C API.
 // Always call from a single serial queue (GemmaMoodClassifier.inferenceQueue).
 final class LlamaRunner {
-    private let model: OpaquePointer
-    private let context: OpaquePointer
-    private let vocab: OpaquePointer
-    private let sampler: OpaquePointer
+    private let model: UnsafeMutablePointer<llama_model>
+    private let vocab: UnsafePointer<llama_vocab>
+    private let contextLength: UInt32
 
     init(modelPath: String, nGpuLayers: Int32 = 9999, contextLength: UInt32 = 512) throws {
         llama_backend_init()
@@ -24,41 +23,39 @@ final class LlamaRunner {
             throw LlamaError.modelLoadFailed
         }
 
-        var ctxParams = llama_context_default_params()
-        ctxParams.n_ctx = contextLength
-        ctxParams.n_batch = 512
-
-        guard let c = llama_init_from_model(m, ctxParams) else {
-            llama_model_free(m)
-            throw LlamaError.contextInitFailed
-        }
-
-        let sparams = llama_sampler_chain_default_params()
-        let s = llama_sampler_chain_init(sparams)
-        llama_sampler_chain_add(s, llama_sampler_init_greedy())
-
-        model = m
-        vocab = v
-        context = c
-        sampler = s
+        self.model = m
+        self.vocab = v
+        self.contextLength = contextLength
     }
 
     deinit {
-        llama_sampler_free(sampler)
-        llama_free(context)
         llama_model_free(model)
         llama_backend_free()
     }
 
     func generate(prompt: String, maxNewTokens: Int = 200) throws -> String {
-        llama_kv_cache_clear(context)
+        // Fresh context per call — clean KV cache without needing llama_kv_cache_clear.
+        var ctxParams = llama_context_default_params()
+        ctxParams.n_ctx = contextLength
+        ctxParams.n_batch = 512
+
+        guard let ctx = llama_init_from_model(model, ctxParams) else {
+            throw LlamaError.contextInitFailed
+        }
+        defer { llama_free(ctx) }
 
         let tokens = try tokenize(prompt)
+
+        let sparams = llama_sampler_chain_default_params()
+        guard let sampler = llama_sampler_chain_init(sparams) else {
+            throw LlamaError.contextInitFailed
+        }
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+        defer { llama_sampler_free(sampler) }
 
         var batch = llama_batch_init(Int32(tokens.count), 0, 1)
         defer { llama_batch_free(batch) }
 
-        // Prefill: feed prompt, enable logits only for the last token
         batch.n_tokens = Int32(tokens.count)
         for (i, tok) in tokens.enumerated() {
             batch.token![i] = tok
@@ -67,7 +64,7 @@ final class LlamaRunner {
             batch.seq_id![i]![0] = 0
             batch.logits![i] = i == tokens.count - 1 ? 1 : 0
         }
-        guard llama_decode(context, batch) == 0 else { throw LlamaError.decodeFailed }
+        guard llama_decode(ctx, batch) == 0 else { throw LlamaError.decodeFailed }
 
         let eosToken = llama_vocab_eos(vocab)
         let eotToken = llama_vocab_eot(vocab)
@@ -75,7 +72,7 @@ final class LlamaRunner {
         var nPos = tokens.count
 
         for _ in 0..<maxNewTokens {
-            let next = llama_sampler_sample(sampler, context, -1)
+            let next = llama_sampler_sample(sampler, ctx, -1)
             if next == eosToken || next == eotToken { break }
             llama_sampler_accept(sampler, next)
 
@@ -89,7 +86,7 @@ final class LlamaRunner {
             batch.logits![0] = 1
             nPos += 1
 
-            guard llama_decode(context, batch) == 0 else { break }
+            guard llama_decode(ctx, batch) == 0 else { break }
         }
 
         return result
