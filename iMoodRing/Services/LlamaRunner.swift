@@ -4,8 +4,8 @@ import llama
 // Synchronous, non-thread-safe wrapper around the llama.cpp C API.
 // Always call from a single serial queue (GemmaMoodClassifier.inferenceQueue).
 final class LlamaRunner {
-    private let model: UnsafeMutablePointer<llama_model>
-    private let vocab: UnsafePointer<llama_vocab>
+    private let model: OpaquePointer
+    private let vocab: OpaquePointer
     private let contextLength: UInt32
 
     init(modelPath: String, nGpuLayers: Int32 = 9999, contextLength: UInt32 = 512) throws {
