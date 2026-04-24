@@ -9,23 +9,29 @@ final class LlamaRunner {
     private let contextLength: UInt32
 
     init(modelPath: String, nGpuLayers: Int32 = 9999, contextLength: UInt32 = 512) throws {
+        print("[LlamaRunner] init start, path=\(modelPath)")
         llama_backend_init()
+        print("[LlamaRunner] backend init done")
 
         var modelParams = llama_model_default_params()
         modelParams.n_gpu_layers = nGpuLayers
 
+        print("[LlamaRunner] calling llama_model_load_from_file")
         guard let m = llama_model_load_from_file(modelPath, modelParams) else {
             throw LlamaError.modelLoadFailed
         }
+        print("[LlamaRunner] model loaded, calling llama_model_get_vocab")
 
         guard let v = llama_model_get_vocab(m) else {
             llama_model_free(m)
             throw LlamaError.modelLoadFailed
         }
+        print("[LlamaRunner] vocab obtained: \(v)")
 
         self.model = m
         self.vocab = v
         self.contextLength = contextLength
+        print("[LlamaRunner] init complete")
     }
 
     deinit {
