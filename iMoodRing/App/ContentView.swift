@@ -241,8 +241,6 @@ struct ContentView: View {
                 .padding(.bottom, 4)
             }
 
-            MoodLegendView()
-
             Button(vm.ringMode == .proportional ? "Proportional" : "Chronological") {
                 vm.ringMode = vm.ringMode == .proportional ? .chronological : .proportional
             }
@@ -265,28 +263,6 @@ struct ContentView: View {
     private var isListening: Bool {
         if case .listening = vm.appState { return true }
         return false
-    }
-}
-
-// MARK: - Mood Legend
-
-struct MoodLegendView: View {
-    private let columns = Array(repeating: GridItem(.flexible(), alignment: .leading), count: 4)
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 6) {
-            ForEach(Mood.allCases, id: \.self) { mood in
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(mood.color)
-                        .frame(width: 7, height: 7)
-                    Text(mood.rawValue)
-                        .font(.system(size: 9, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-            }
-        }
-        .padding(.horizontal, 40)
     }
 }
 
