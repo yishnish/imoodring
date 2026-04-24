@@ -76,7 +76,7 @@ private struct Ring {
 // MARK: - RingSystem
 
 final class RingSystem {
-    fileprivate(set) var rings: [Ring] = []
+    fileprivate var rings: [Ring] = []
 
     var compositeRGB:   (r: Double, g: Double, b: Double) = Mood.neutral.rgb
     var compositeCount: Int    = 0
