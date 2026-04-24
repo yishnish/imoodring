@@ -44,6 +44,7 @@ actor GemmaMoodClassifier: MoodClassifying {
             }
         }
 
+        print("[Classifier] raw output: \(raw)")
         return parse(raw: raw, fallbackTranscript: transcript)
     }
 
