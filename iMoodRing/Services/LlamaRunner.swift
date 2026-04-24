@@ -39,12 +39,15 @@ final class LlamaRunner {
         ctxParams.n_ctx = contextLength
         ctxParams.n_batch = 512
 
+        print("[LlamaRunner] init_from_model start")
         guard let ctx = llama_init_from_model(model, ctxParams) else {
             throw LlamaError.contextInitFailed
         }
         defer { llama_free(ctx) }
+        print("[LlamaRunner] init_from_model done, tokenizing")
 
         let tokens = try tokenize(prompt)
+        print("[LlamaRunner] tokenized: \(tokens.count) tokens")
 
         let sparams = llama_sampler_chain_default_params()
         guard let sampler = llama_sampler_chain_init(sparams) else {
@@ -97,9 +100,11 @@ final class LlamaRunner {
     private func tokenize(_ text: String) throws -> [llama_token] {
         let capacity = text.utf8.count + 64
         var buf = [llama_token](repeating: 0, count: capacity)
+        print("[LlamaRunner] calling llama_tokenize, vocab=\(vocab), len=\(text.utf8.count)")
         let n = text.withCString { ptr in
             llama_tokenize(vocab, ptr, Int32(text.utf8.count), &buf, Int32(capacity), true, true)
         }
+        print("[LlamaRunner] llama_tokenize returned \(n)")
         guard n > 0 else { throw LlamaError.tokenizationFailed }
         return Array(buf.prefix(Int(n)))
     }
