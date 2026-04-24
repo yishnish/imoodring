@@ -13,12 +13,11 @@ final class AppViewModel {
 
     var appState: State = .idle
     var showDebug = false
-    var ringMode: RingMode = .proportional
 
-    private(set) var history   = MoodHistory()
-    private(set) var animator  = RingAnimator()
-    var chunkCount  = 0
-    var lastMood:    Mood?
+    private(set) var ringSystem = RingSystem()
+    private(set) var history    = MoodHistory()   // kept for debug overlay data
+    var chunkCount   = 0
+    var lastMood:     Mood?
     var lastIntensity: Double = 0.5
     var lastTranscript = ""
     var isProcessing = false
@@ -40,7 +39,6 @@ final class AppViewModel {
         let variant = ModelVariant.gemma3_1b
         appState = .loading(progress: 0, label: "Preparing model…", detail: "")
 
-        // Observe ModelLoader.state and relay progress
         await withTaskGroup(of: Void.self) { group in
             group.addTask { [self] in
                 await self.loader.load(variant)
@@ -54,9 +52,8 @@ final class AppViewModel {
                         self.appState = .loading(progress: progress, label: "Downloading \(variant.name)", detail: detail)
                     case .ready(let path):
                         do {
-                            // Request permissions before starting audio — on device these are required.
-                            let micOK  = await AVAudioApplication.requestRecordPermission()
-                            let asrOK  = await self.classifier.requestSpeechAuth()
+                            let micOK = await AVAudioApplication.requestRecordPermission()
+                            let asrOK = await self.classifier.requestSpeechAuth()
                             guard micOK, asrOK else {
                                 self.appState = .error("Microphone and speech recognition permissions are required.")
                                 return
@@ -83,14 +80,10 @@ final class AppViewModel {
     private func startAudio() {
         audio.onChunk = { [weak self] pcm in
             guard let self else { return }
-            Task {
-                await self.processChunk(pcm)
-            }
+            Task { await self.processChunk(pcm) }
         }
         audio.onError = { [weak self] msg in
-            Task { @MainActor [weak self] in
-                self?.appState = .error(msg)
-            }
+            Task { @MainActor [weak self] in self?.appState = .error(msg) }
         }
         audio.start()
     }
@@ -102,8 +95,8 @@ final class AppViewModel {
         do {
             guard let result = try await classifier.classify(audio: pcm) else { return }
             await MainActor.run {
+                ringSystem.addRing(mood: result.mood, intensity: result.intensity)
                 history.add(mood: result.mood, intensity: result.intensity)
-                animator.setMood(result.mood, intensity: result.intensity)
                 lastMood       = result.mood
                 lastIntensity  = result.intensity
                 lastTranscript = result.transcript
@@ -111,7 +104,6 @@ final class AppViewModel {
             }
             pulse(mood: result.mood, intensity: result.intensity)
         } catch {
-            // Transient chunk errors are non-fatal — log and continue
             print("Chunk error: \(error)")
         }
     }
@@ -144,17 +136,14 @@ struct ContentView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Ring — always rendered, hidden until listening
-            RingView(history: vm.history, animator: vm.animator, mode: vm.ringMode)
+            RingView(ringSystem: vm.ringSystem)
                 .ignoresSafeArea()
                 .opacity(vm.isListening ? 1 : 0)
 
-            // Overlay — shown until listening
             if !vm.isListening {
                 overlay
             }
 
-            // Debug panel + mode toggle — shown while listening
             if vm.isListening {
                 listeningHUD
             }
@@ -227,46 +216,29 @@ struct ContentView: View {
     // MARK: - Listening HUD
 
     private var listeningHUD: some View {
-        VStack(spacing: 12) {
+        VStack {
             Spacer()
 
             if vm.showDebug {
                 DebugOverlayView(
-                    chunkCount:  vm.chunkCount,
-                    mood:        vm.lastMood,
-                    intensity:   vm.lastIntensity,
-                    transcript:  vm.lastTranscript,
+                    chunkCount:   vm.chunkCount,
+                    mood:         vm.lastMood,
+                    intensity:    vm.lastIntensity,
+                    transcript:   vm.lastTranscript,
                     isProcessing: vm.isProcessing
                 )
-                .padding(.bottom, 4)
+                .padding(.bottom, 8)
             }
 
-            Button(vm.ringMode == .proportional ? "Proportional" : "Chronological") {
-                vm.ringMode = vm.ringMode == .proportional ? .chronological : .proportional
-            }
-            .font(.system(size: 10, weight: .regular))
-            .tracking(2.2)
-            .textCase(.uppercase)
-            .foregroundStyle(.white.opacity(0.35))
-            .padding(.horizontal, 18)
-            .padding(.vertical, 9)
-            .background(.white.opacity(0.06))
-            .overlay(
-                Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-            .onLongPressGesture { vm.showDebug.toggle() }
+            // Long-press anywhere on the HUD to toggle debug overlay
+            Color.clear
+                .frame(height: 44)
+                .onLongPressGesture { vm.showDebug.toggle() }
         }
         .padding(.bottom, 36)
     }
-
-    private var isListening: Bool {
-        if case .listening = vm.appState { return true }
-        return false
-    }
 }
 
-// Extension so AppViewModel can expose isListening cleanly
 extension AppViewModel {
     var isListening: Bool {
         if case .listening = appState { return true }
