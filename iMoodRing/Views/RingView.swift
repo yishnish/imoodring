@@ -12,6 +12,14 @@ private enum Zone {
 private let gapAngle: CGFloat = 0.012 * 2 * .pi
 private let lerpSpeed: Double = 0.04
 
+private struct ArcHit {
+    let mood: Mood
+    let startAngle: CGFloat
+    let endAngle: CGFloat
+    let rMin: CGFloat
+    let rMax: CGFloat
+}
+
 // Mutable animation state driven by CADisplayLink; not an Observable — mutated only on main thread.
 final class RingAnimator {
     var currentRGB: (r: Double, g: Double, b: Double) = Mood.neutral.rgb
@@ -56,10 +64,21 @@ final class RingCanvasView: UIView {
     var mode: RingMode = .proportional
 
     private var displayLink: CADisplayLink?
+    private var tapAdded = false
+    private var arcHits: [ArcHit] = []
+    private weak var moodLabel: UILabel?
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { startLink() } else { stopLink() }
+        if window != nil {
+            startLink()
+            if !tapAdded {
+                addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
+                tapAdded = true
+            }
+        } else {
+            stopLink()
+        }
     }
 
     private func startLink() {
@@ -78,9 +97,62 @@ final class RingCanvasView: UIView {
         setNeedsDisplay()
     }
 
+    // MARK: - Tap
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        let pt = gesture.location(in: self)
+        let cx = bounds.midX
+        let cy = bounds.midY
+        let dx = pt.x - cx
+        let dy = pt.y - cy
+        let r  = sqrt(dx * dx + dy * dy)
+
+        // atan2 returns angle from x-axis in [-π, π].
+        // Shift to [-π/2, 3π/2] so it aligns with our arc convention (start = -π/2, clockwise).
+        var angle = atan2(dy, dx)
+        if angle < -.pi / 2 { angle += 2 * .pi }
+
+        for hit in arcHits where r >= hit.rMin && r <= hit.rMax {
+            if angle >= hit.startAngle && angle <= hit.endAngle {
+                showMoodLabel(hit.mood)
+                return
+            }
+        }
+    }
+
+    private func showMoodLabel(_ mood: Mood) {
+        moodLabel?.removeFromSuperview()
+
+        let (r, g, b) = mood.rgb
+        let label = UILabel()
+        label.text = mood.rawValue.uppercased()
+        label.font = .systemFont(ofSize: 16, weight: .light)
+        label.letterSpacing(2.5)
+        label.textColor = UIColor(red: r / 255, green: g / 255, blue: b / 255, alpha: 1)
+        label.layer.shadowColor = UIColor.black.cgColor
+        label.layer.shadowOffset = .zero
+        label.layer.shadowRadius = 6
+        label.layer.shadowOpacity = 0.8
+        label.layer.masksToBounds = false
+        label.sizeToFit()
+        label.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        label.alpha = 0
+        addSubview(label)
+        moodLabel = label
+
+        UIView.animate(withDuration: 0.2) { label.alpha = 1 }
+        UIView.animate(withDuration: 0.5, delay: 1.2, options: []) { label.alpha = 0 } completion: { _ in
+            label.removeFromSuperview()
+        }
+    }
+
+    // MARK: - Draw
+
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext(),
               let anim = animator else { return }
+
+        arcHits.removeAll(keepingCapacity: true)
 
         let t  = displayLink?.timestamp ?? CACurrentMediaTime()
         let cx = rect.midX
@@ -120,34 +192,44 @@ final class RingCanvasView: UIView {
         guard !recent.isEmpty else { return }
         let rMid   = R * (Zone.innerMin + Zone.innerMax) / 2
         let rWidth = R * (Zone.innerMax - Zone.innerMin)
+        let rMin   = rMid - rWidth / 2
+        let rMax   = rMid + rWidth / 2
         let seg    = CGFloat.pi * 2 / CGFloat(max(recent.count, 1))
         let gap    = CGFloat(0.008) * 2 * .pi
 
         for (i, chunk) in recent.enumerated() {
-            let start = -.pi / 2 + CGFloat(i) * seg + gap / 2
-            let end   = -.pi / 2 + CGFloat(i + 1) * seg - gap / 2
+            let hitStart  = -.pi / 2 + CGFloat(i) * seg
+            let hitEnd    = -.pi / 2 + CGFloat(i + 1) * seg
+            let drawStart = hitStart + gap / 2
+            let drawEnd   = hitEnd   - gap / 2
             let alpha = 0.55 + 0.45 * chunk.intensity
             let blur  = 18.0 * chunk.intensity
             arc(ctx: ctx, cx: cx, cy: cy, r: rMid, w: rWidth,
-                from: start, to: end, rgb: chunk.mood.rgb, alpha: alpha, blur: blur)
+                from: drawStart, to: drawEnd, rgb: chunk.mood.rgb, alpha: alpha, blur: blur)
+            arcHits.append(ArcHit(mood: chunk.mood, startAngle: hitStart, endAngle: hitEnd, rMin: rMin, rMax: rMax))
         }
     }
 
     private func drawOuterRing(ctx: CGContext, cx: CGFloat, cy: CGFloat, R: CGFloat, history: MoodHistory) {
         let rMid   = R * (Zone.outerMin + Zone.outerMax) / 2
         let rWidth = R * (Zone.outerMax - Zone.outerMin)
+        let rMin   = rMid - rWidth / 2
+        let rMax   = rMid + rWidth / 2
 
         switch mode {
         case .proportional:
             var angle: CGFloat = -.pi / 2
             for (mood, fraction) in history.proportions {
-                let span  = CGFloat(fraction) * 2 * .pi
-                let start = angle + gapAngle / 2
-                let end   = angle + span - gapAngle / 2
+                let span      = CGFloat(fraction) * 2 * .pi
+                let hitStart  = angle
+                let hitEnd    = angle + span
+                let drawStart = hitStart + gapAngle / 2
+                let drawEnd   = hitEnd   - gapAngle / 2
                 angle += span
-                guard end > start else { continue }
+                guard drawEnd > drawStart else { continue }
                 arc(ctx: ctx, cx: cx, cy: cy, r: rMid, w: rWidth,
-                    from: start, to: end, rgb: mood.rgb, alpha: 0.65, blur: 10)
+                    from: drawStart, to: drawEnd, rgb: mood.rgb, alpha: 0.65, blur: 10)
+                arcHits.append(ArcHit(mood: mood, startAngle: hitStart, endAngle: hitEnd, rMin: rMin, rMax: rMax))
             }
 
         case .chronological:
@@ -156,12 +238,15 @@ final class RingCanvasView: UIView {
             let seg = CGFloat.pi * 2 / CGFloat(all.count)
             let gap = min(gapAngle, seg * 0.15)
             for (i, chunk) in all.enumerated() {
-                let start = -.pi / 2 + CGFloat(i) * seg + gap / 2
-                let end   = -.pi / 2 + CGFloat(i + 1) * seg - gap / 2
-                guard end > start else { continue }
+                let hitStart  = -.pi / 2 + CGFloat(i) * seg
+                let hitEnd    = -.pi / 2 + CGFloat(i + 1) * seg
+                let drawStart = hitStart + gap / 2
+                let drawEnd   = hitEnd   - gap / 2
+                guard drawEnd > drawStart else { continue }
                 let alpha = 0.4 + 0.3 * chunk.intensity
                 arc(ctx: ctx, cx: cx, cy: cy, r: rMid, w: rWidth,
-                    from: start, to: end, rgb: chunk.mood.rgb, alpha: alpha, blur: 8)
+                    from: drawStart, to: drawEnd, rgb: chunk.mood.rgb, alpha: alpha, blur: 8)
+                arcHits.append(ArcHit(mood: chunk.mood, startAngle: hitStart, endAngle: hitEnd, rMin: rMin, rMax: rMax))
             }
         }
     }
@@ -204,5 +289,12 @@ final class RingCanvasView: UIView {
 
     private func uiColor(_ rgb: (r: Double, g: Double, b: Double), alpha: Double) -> UIColor {
         UIColor(red: rgb.r / 255, green: rgb.g / 255, blue: rgb.b / 255, alpha: alpha)
+    }
+}
+
+private extension UILabel {
+    func letterSpacing(_ spacing: CGFloat) {
+        guard let text else { return }
+        attributedText = NSAttributedString(string: text, attributes: [.kern: spacing])
     }
 }
