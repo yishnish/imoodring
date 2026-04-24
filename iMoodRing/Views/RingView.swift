@@ -9,7 +9,7 @@ private enum Zone {
 
 private let lerpSpeed:    Double  = 0.04
 private let travelTime:   Double  = 20.0   // seconds inner → outer
-private let particleCount: Int    = 10
+private let particleCount: Int    = 28
 
 // MARK: - Particle
 
@@ -24,11 +24,11 @@ private struct Particle {
     static func random() -> Particle {
         Particle(
             angle:           CGFloat.random(in: 0 ..< 2 * .pi),
-            angularVelocity: CGFloat.random(in: -0.45 ... 0.45),
-            radialAmplitude: CGFloat.random(in: 3 ... 9),
+            angularVelocity: CGFloat.random(in: -0.35 ... 0.35),
+            radialAmplitude: CGFloat.random(in: 10 ... 24),
             radialPhase:     Double.random(in: 0 ..< 2 * .pi),
             alphaPhase:      Double.random(in: 0 ..< 2 * .pi),
-            size:            CGFloat.random(in: 1.5 ... 3.5)
+            size:            CGFloat.random(in: 10 ... 22)   // fog-blob radius
         )
     }
 
@@ -41,7 +41,7 @@ private struct Particle {
     }
 
     func alpha(time: Double) -> Double {
-        0.2 + 0.55 * (0.5 + 0.5 * sin(alphaPhase + time * 2.4))
+        0.08 + 0.22 * (0.5 + 0.5 * sin(alphaPhase + time * 2.4))
     }
 }
 
@@ -272,10 +272,19 @@ final class RingCanvasView: UIView {
         let r     = R * Zone.composite
         let alpha = sys.compositeAlpha
         let rgb   = sys.compositeRGB
+        // Outer halo
         ctx.saveGState()
-        ctx.setShadow(offset: .zero, blur: 22, color: uiColor(rgb, alpha: alpha * 0.6).cgColor)
+        ctx.setShadow(offset: .zero, blur: 32, color: uiColor(rgb, alpha: alpha * 0.45).cgColor)
+        ctx.setStrokeColor(uiColor(rgb, alpha: alpha * 0.25).cgColor)
+        ctx.setLineWidth(14)
+        ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+        ctx.strokePath()
+        ctx.restoreGState()
+        // Core ring
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: 14, color: uiColor(rgb, alpha: alpha * 0.7).cgColor)
         ctx.setStrokeColor(uiColor(rgb, alpha: alpha).cgColor)
-        ctx.setLineWidth(1.5)
+        ctx.setLineWidth(6)
         ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
         ctx.strokePath()
         ctx.restoreGState()
@@ -291,28 +300,47 @@ final class RingCanvasView: UIView {
             let alpha = ring.alpha(at: ring.progress)
             let rgb   = ring.baseRGB
 
-            // Main ring
+            // Outer halo
             ctx.saveGState()
-            ctx.setShadow(offset: .zero, blur: 16, color: uiColor(rgb, alpha: alpha * 0.7).cgColor)
+            ctx.setShadow(offset: .zero, blur: 28, color: uiColor(rgb, alpha: alpha * 0.4).cgColor)
+            ctx.setStrokeColor(uiColor(rgb, alpha: alpha * 0.2).cgColor)
+            ctx.setLineWidth(16)
+            ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
+            ctx.strokePath()
+            ctx.restoreGState()
+            // Core ring
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: 12, color: uiColor(rgb, alpha: alpha * 0.8).cgColor)
             ctx.setStrokeColor(uiColor(rgb, alpha: alpha).cgColor)
-            ctx.setLineWidth(1.5)
+            ctx.setLineWidth(6)
             ctx.addEllipse(in: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2))
             ctx.strokePath()
             ctx.restoreGState()
 
             ringHits.append((mood: ring.mood, radius: r))
 
-            // Particles
+            // Misty particle cloud — each particle is a soft radial-gradient fog blob
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
             for particle in ring.particles {
-                let pr      = r + particle.radialOffset(time: t)
-                let px      = cx + pr * cos(particle.angle)
-                let py      = cy + pr * sin(particle.angle)
-                let palpha  = particle.alpha(time: t) * alpha
-                let halfS   = particle.size / 2
+                let pr     = r + particle.radialOffset(time: t)
+                let px     = cx + pr * cos(particle.angle)
+                let py     = cy + pr * sin(particle.angle)
+                let palpha = particle.alpha(time: t) * alpha
+                let brad   = particle.size           // blob radius
+                let colors: [CGColor] = [
+                    uiColor(rgb, alpha: palpha).cgColor,
+                    uiColor(rgb, alpha: 0).cgColor,
+                ]
+                guard let gradient = CGGradient(colorsSpace: colorSpace,
+                                                colors: colors as CFArray,
+                                                locations: [0, 1.0]) else { continue }
                 ctx.saveGState()
-                ctx.setShadow(offset: .zero, blur: 7, color: uiColor(rgb, alpha: palpha * 0.8).cgColor)
-                ctx.setFillColor(uiColor(rgb, alpha: palpha).cgColor)
-                ctx.fillEllipse(in: CGRect(x: px - halfS, y: py - halfS, width: particle.size, height: particle.size))
+                ctx.addEllipse(in: CGRect(x: px - brad, y: py - brad, width: brad * 2, height: brad * 2))
+                ctx.clip()
+                ctx.drawRadialGradient(gradient,
+                                       startCenter: CGPoint(x: px, y: py), startRadius: 0,
+                                       endCenter:   CGPoint(x: px, y: py), endRadius: brad,
+                                       options: [])
                 ctx.restoreGState()
             }
         }
